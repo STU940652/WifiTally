@@ -95,6 +95,8 @@ void setup(void) {
   server.onNotFound(handleNotFound);
 
   server.begin();
+
+  MDNS.addService("http", "tcp", 80);
   Serial.println("HTTP server started");
 }
 
