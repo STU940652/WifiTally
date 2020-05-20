@@ -11,6 +11,7 @@
 #include <ESP8266WiFi.h>
 #include <ESP8266WiFiMulti.h>
 #include <ESP8266mDNS.h>
+#include <WiFiUdp.h>
 
 #include <ESP8266HTTPClient.h>
 #include "ssid.h"
@@ -27,11 +28,18 @@
 
 ESP8266WiFiMulti WiFiMulti;
 
-HTTPClient http;
-
 IPAddress server_ip;
 uint16_t server_port=80;
 bool server_ready = false;
+
+WiFiUDP Udp;
+unsigned long refresh_time = 0;
+// Refresh every 5 minutes
+// Expires after 2 hours
+#define REFRESH_PERIOD (5 * 60 * 1000)
+
+char incomingPacket[255];  // buffer for incoming packets
+
 
 bool resolve_mdns_service(char* service_name, char* protocol, char* desired_host, IPAddress* ip_addr, uint16_t *port_number) {
   Serial.println("Sending mDNS query");
@@ -84,9 +92,6 @@ void setup() {
   WiFi.mode(WIFI_STA);
   WiFiMulti.addAP(STASSID, STAPSK);
 
-  // allow reuse (if server supports it)
-  http.setReuse(true);
-
   // Connect WiFi
   while ((WiFiMulti.run() != WL_CONNECTED)) {
     digitalWrite(LED_BUILTIN, 0);
@@ -101,67 +106,63 @@ void setup() {
   } else {
     Serial.println("mDNS responder started");
   }
+
+   Udp.begin(80);
 }
 
-WiFiClient client;
-String server_url;
 
 void loop() {
+  // Connect WiFi
+  while ((WiFiMulti.run() != WL_CONNECTED)) {
+    server_ready = false;
+    digitalWrite(LED_BUILTIN, 0);
+    delay(200);
+    digitalWrite(LED_BUILTIN, 1);
+    delay(200);    
+  }  
+
   if (!server_ready) {
     if(resolve_mdns_service("http", "tcp", TARGET_HOSTNAME, &server_ip, &server_port)) {
       Serial.printf("got an answer for %s.local!\n", TARGET_HOSTNAME);
       Serial.println(server_ip);
-      Serial.println(server_port);
+      Serial.println(server_ip);
+      refresh_time = 0;
       server_ready = true;
-      server_url = String("http://") + server_ip.toString() + String(":") + String(server_port) + String("/tally");
-      Serial.println(server_url);
     } else {
       Serial.printf("Sorry, %s.local not found\n", TARGET_HOSTNAME);
+      return;
     }    
   }
-  
-  // wait for WiFi connection
+    
   if ((WiFiMulti.run() == WL_CONNECTED) && server_ready) {
-    http.begin(client, server_url);
-
-    int httpCode = http.GET();
-    if (httpCode == HTTP_CODE_OK) {
-      // http.writeToStream(&Serial);
-      // Serial.printf("Tally: %c\n", http.getString()[CAMERA-1]);
-      if (http.getString()[CAMERA-1] == '1') {
-        digitalWrite(LED_BUILTIN, 0);
-      } else {
-        digitalWrite(LED_BUILTIN, 1);
-      }
-    } else {
-      Serial.printf("[HTTP] GET... failed, error: %s\n", http.errorToString(httpCode).c_str());
-      digitalWrite(LED_BUILTIN, 0);
-      delay(200);
-      digitalWrite(LED_BUILTIN, 1);
-      delay(200);
-      digitalWrite(LED_BUILTIN, 0);
-      delay(200);
-      digitalWrite(LED_BUILTIN, 1);
-     }
-
-    http.end();
-  } else {
-    digitalWrite(LED_BUILTIN, 0);
-    delay(200);
-    digitalWrite(LED_BUILTIN, 1);
-    delay(200);
-    digitalWrite(LED_BUILTIN, 0);
-    delay(200);
-    digitalWrite(LED_BUILTIN, 1);
-    delay(200);
-    digitalWrite(LED_BUILTIN, 0);
-    delay(200);
-    digitalWrite(LED_BUILTIN, 1);
-    delay(200);
-    digitalWrite(LED_BUILTIN, 0);
-    delay(200);
-    digitalWrite(LED_BUILTIN, 1);
+    if (millis() > refresh_time) {
+      Serial.printf("Refreshing server registration\n"); 
+      Udp.beginPacket(server_ip, server_port);
+      Udp.write(String(String(HOSTNAME)+String("\n")).c_str());
+      Udp.endPacket();
+      // Next Refresh
+      refresh_time = millis() + REFRESH_PERIOD;
+    }
   }
 
+  /* Check for incoming messages */
+  int packetSize = Udp.parsePacket();
+  if (packetSize)
+  {
+    // receive incoming UDP packets
+    //Serial.printf("Received %d bytes from %s, port %d\n", packetSize, Udp.remoteIP().toString().c_str(), Udp.remotePort());
+    int len = Udp.read(incomingPacket, 255);
+    if (len > 0)
+    {
+      incomingPacket[len] = 0;
+    }
+    //Serial.printf("UDP packet contents: %s\n", incomingPacket);
+    if (incomingPacket[0] == '1'){
+        digitalWrite(LED_BUILTIN, 0);
+      } else {
+        digitalWrite(LED_BUILTIN, 1);    
+    }
+  }
+ 
   delay(100);
 }
