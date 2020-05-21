@@ -1,25 +1,16 @@
 #include <ESP8266WiFi.h>
-#include <WiFiClient.h>
-#include <ESP8266WebServer.h>
+#include <ESP8266WiFiMulti.h>
 #include <ESP8266mDNS.h>
 #include <WiFiUdp.h>
-#include "ssid.h"
-
-#ifndef STASSID
-#define STASSID "your-ssid"
-#define STAPSK  "your-password"
-#endif
-
-const char* ssid = STASSID;
-const char* password = STAPSK;
 
 WiFiUDP Udp;
 char incomingPacket[255];  // buffer for incoming packets
 
-
 const int led = LED_BUILTIN;
 
 #define CAMERA_COUNT 6
+#define EXPIRE_PERIOD (120 * 60 * 1000)
+#define UDP_PORT 80
 
 const int tally_inputs [CAMERA_COUNT] = {
   5,  // D1
@@ -30,6 +21,23 @@ const int tally_inputs [CAMERA_COUNT] = {
   12, // D6
   13 // D7
 };
+
+struct stassid_t {
+  char* ssid;
+  char* pk;
+};
+
+#include "ssid.h"
+
+/* ssid.h has a list like this:
+struct stassid_t stassid_list[] = 
+{
+  {"SSID1", "PASSWORD2"},
+  {"SSID2", "PASSWORD2"},
+};
+*/
+
+ESP8266WiFiMulti WiFiMulti;
 
 struct tally_client_t {
   IPAddress ip;
@@ -45,7 +53,9 @@ void setup(void) {
   }
   Serial.begin(115200);
   WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, password);
+  for (int i=0; i < sizeof(stassid_list)/sizeof(stassid_t); i++) {
+    WiFiMulti.addAP(stassid_list[i].ssid, stassid_list[i].pk);
+  }  
   Serial.println("");
 
   // Init connection database
@@ -53,16 +63,16 @@ void setup(void) {
     tally_clients[i].expire_time = 0;
   }
 
-  // Wait for connection
-  while (WiFi.status() != WL_CONNECTED) {
-    digitalWrite(led, 0);
-    delay(500);
-    digitalWrite(led, 1);
-    Serial.print(".");
+  // Connect WiFi
+  while ((WiFiMulti.run() != WL_CONNECTED)) {
+    digitalWrite(LED_BUILTIN, 0);
+    delay(200);
+    digitalWrite(LED_BUILTIN, 1);
+    delay(200);    
   }
+  
   Serial.println("");
-  Serial.print("Connected to ");
-  Serial.println(ssid);
+  Serial.print("Connected");
   Serial.print("IP address: ");
   Serial.println(WiFi.localIP());
 
@@ -70,17 +80,23 @@ void setup(void) {
     Serial.println("MDNS responder started");
   }
 
-  Udp.begin(80);
+  Udp.begin(UDP_PORT);
 
-  MDNS.addService("http", "tcp", 80);
-  Serial.println("HTTP server started");
+  MDNS.addService("tally", "udp", 80);
+  Serial.println("Tally UDP server started");
 }
-
-#define EXPIRE_PERIOD (120 * 60 * 1000)
 
 void loop(void) {
   MDNS.update();
-
+  
+  // Connect WiFi
+  while ((WiFiMulti.run() != WL_CONNECTED)) {
+    digitalWrite(LED_BUILTIN, 0);
+    delay(200);
+    digitalWrite(LED_BUILTIN, 1);
+    delay(200);    
+  } 
+  
   /* Check for incoming messages */
   int packetSize = Udp.parsePacket();
   if (packetSize)

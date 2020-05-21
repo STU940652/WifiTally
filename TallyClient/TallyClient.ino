@@ -13,18 +13,24 @@
 #include <ESP8266mDNS.h>
 #include <WiFiUdp.h>
 
-#include <ESP8266HTTPClient.h>
-#include "ssid.h"
-
-#ifndef STASSID
-#define STASSID "your-ssid"
-#define STAPSK  "your-password"
-#endif
-
-#define CAMERA 1
 #define HOSTNAME "CAMERA1"
 #define TARGET_HOSTNAME "WiFiTally.local"
 // #define DEBUG
+#define UDP_PORT 80
+
+struct stassid_t {
+  char* ssid;
+  char* pk;
+};
+#include "ssid.h"
+
+/* ssid.h has a list like this:
+struct stassid_t stassid_list[] = 
+{
+  {"SSID1", "PASSWORD2"},
+  {"SSID2", "PASSWORD2"},
+};
+*/
 
 ESP8266WiFiMulti WiFiMulti;
 
@@ -90,8 +96,10 @@ void setup() {
   }
 
   WiFi.mode(WIFI_STA);
-  WiFiMulti.addAP(STASSID, STAPSK);
-
+  for (int i=0; i < sizeof(stassid_list)/sizeof(stassid_t); i++) {
+    WiFiMulti.addAP(stassid_list[i].ssid, stassid_list[i].pk);
+  }
+  
   // Connect WiFi
   while ((WiFiMulti.run() != WL_CONNECTED)) {
     digitalWrite(LED_BUILTIN, 0);
@@ -107,7 +115,7 @@ void setup() {
     Serial.println("mDNS responder started");
   }
 
-   Udp.begin(80);
+   Udp.begin(UDP_PORT);
 }
 
 
@@ -122,13 +130,17 @@ void loop() {
   }  
 
   if (!server_ready) {
-    if(resolve_mdns_service("http", "tcp", TARGET_HOSTNAME, &server_ip, &server_port)) {
+    if(resolve_mdns_service("tally", "udp", TARGET_HOSTNAME, &server_ip, &server_port)) {
       Serial.printf("got an answer for %s.local!\n", TARGET_HOSTNAME);
       Serial.println(server_ip);
       Serial.println(server_ip);
       refresh_time = 0;
       server_ready = true;
     } else {
+      digitalWrite(LED_BUILTIN, 0);
+      delay(200);
+      digitalWrite(LED_BUILTIN, 1);
+      delay(200);    
       Serial.printf("Sorry, %s.local not found\n", TARGET_HOSTNAME);
       return;
     }    
@@ -164,5 +176,5 @@ void loop() {
     }
   }
  
-  delay(100);
+  delay(10);
 }
