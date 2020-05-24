@@ -50,3 +50,12 @@ The server is connected to the tally relays through GPIO. The relays should e co
 |    4   |     14      |   D5      |
 |    5   |     12      |   D6      |
 |    6   |     13      |   D7      |
+
+# Operation Overview
+The server uses mDNS to advertise a hostname of "WiFiTally", which the clients use to find the server's IP address. The client sends a UDP packet to port 80 of the server with it's hostname (e.g. "CAMERA1"). The server then registers the IP address of the client with that tally input.
+Every 100ms, the server checks the tally GPIO, and sends an update to each of of the registered clients. A UDP packet is sent to port 80 of the client with a '1' to light the LED or a '0' to turn the LED off.
+The server expires the registration every 2 hours. Clients re-register every 5 minutes.
+
+# Known Issues
+1. The expiration timer rolls over every 49.7 days. Strange things may happen around that time.
+
