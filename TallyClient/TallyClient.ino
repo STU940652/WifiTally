@@ -138,10 +138,14 @@ void loop() {
       server_ready = true;
     } else {
       digitalWrite(LED_BUILTIN, 0);
-      delay(200);
+      delay(100);
       digitalWrite(LED_BUILTIN, 1);
-      delay(200);    
-      Serial.printf("Sorry, %s.local not found\n", TARGET_HOSTNAME);
+      delay(100);  
+      digitalWrite(LED_BUILTIN, 0);
+      delay(100);
+      digitalWrite(LED_BUILTIN, 1);
+      delay(100);    
+      Serial.printf("Sorry, %s not found\n", TARGET_HOSTNAME);
       return;
     }    
   }
